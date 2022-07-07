@@ -9,7 +9,6 @@ program
 tmp/
 vendor/
 composer.lock
-target/
 Cargo.lock
 .env
 config.json
