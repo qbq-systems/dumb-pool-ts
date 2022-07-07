@@ -1,0 +1,49 @@
+{
+  "name": "@qbq.systems/dumb-pool",
+  "version": "22.7.7-10.0.34",
+  "description": "Dumb process pool with CPU cores binding for 'heavy' tasks. A CPU core can only perform one task at a time. Linux only.",
+  "homepage": "https://github.com/qbq-systems/dumb-pool-ts",
+  "keywords": [
+    "async",
+    "await",
+    "cluster",
+    "concurrency",
+    "pool",
+    "promise",
+    "thread",
+    "thread pool",
+    "worker",
+    "worker threads"
+  ],
+  "main": "target/index.js",
+  "types": "target/index.d.ts",
+  "author": {
+    "name": "Vladimit Galunshchikov",
+    "url": "https://github.com/soyayaos"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qbq-systems/dumb-pool-ts"
+  },
+  "bugs": {
+    "url": "https://github.com/qbq-systems/dumb-pool-ts/issues"
+  },
+  "scripts": {
+    "compile": "tsc",
+    "generate:declarations": "tsc --declaration",
+    "test": "ts-node test.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^5.30.0",
+    "@typescript-eslint/parser": "^5.30.0",
+    "eslint": "^8.18.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.26.0",
+    "ts-node": "^10.8.1",
+    "ts-sql-plugin": "^0.10.0",
+    "typescript": "^4.7.4",
+    "typescript-styled-plugin": "^0.18.2"
+  }
+}
