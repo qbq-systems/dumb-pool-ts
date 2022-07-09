@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Pool = void 0;
-const child_process_1 = require("child_process");
+const node_child_process_1 = require("node:child_process");
 const node_cluster_1 = __importDefault(require("node:cluster"));
 const node_os_1 = require("node:os");
 const cores = (0, node_os_1.cpus)().length;
@@ -12,9 +12,9 @@ class Pool {
     /**
      * Pool constructor
      *
-     * @param {number} numCPU Number of processor cores to use in the pool
+     * @param {boolean} pinPrimary Pin primary process to core #0
      */
-    constructor(numCPU = cores) {
+    constructor(pinPrimary = true) {
         /**
          * You can collect statistics on the use of processor cores
          */
@@ -32,10 +32,15 @@ class Pool {
          */
         this.currentTaskID = 0;
         /**
+         * Pin primary process to core #0
+         */
+        this.pinPrimary = true;
+        /**
+         * Pool size (number of workers)
          *
          * @private
          */
-        this.numCPUs = 1;
+        this.poolSize = 1;
         /**
          * Statistics in list format, where the key is the processor core number and the value is a list of completed tasks
          */
@@ -52,14 +57,14 @@ class Pool {
          * @private
          */
         this.workers = [];
-        this.numCPUs = numCPU;
-        this.init();
+        this.pinPrimary = pinPrimary;
+        this.poolSize = pinPrimary && cores > 2 ? cores - 1 : cores;
     }
     /**
      * Checks that all current tasks are completed
      */
     allDone() {
-        return this.freeCPUs() === this.numCPUs;
+        return this.freeCPUs() === this.poolSize;
     }
     /**
      * Terminates the workers and the main process
@@ -67,6 +72,16 @@ class Pool {
     exit() {
         this.stopWorkers();
         process.exit(0);
+    }
+    /**
+     * Throw new error and stop all processes without properly stopping workers
+     *
+     * @param {string} msg Error description
+     * @private
+     */
+    fatalError(msg) {
+        throw new Error(msg);
+        process.exit(1);
     }
     /**
      * Returns the number of free processor cores
@@ -96,18 +111,24 @@ class Pool {
      */
     init() {
         if (node_cluster_1.default.isPrimary) {
+            if (this.pinPrimary) {
+                this.pinProcess(0, process.pid);
+                if (this.collectStatistics) {
+                    this.statistics.push([-1]);
+                }
+            }
             const env = {};
             Object.entries(process.env).forEach((item) => {
                 const [k, v] = item;
-                if (k.indexOf('DUMMY_') === 0) {
+                if (k.indexOf('DUMB_') === 0) {
                     // @ts-ignore
                     env[k] = v;
                 }
             });
             while (true) {
-                const cpuID = this.workers.length;
+                const coreID = this.pinPrimary ? this.workers.length + 1 : this.workers.length;
                 // @ts-ignore
-                env.CPU_ID = cpuID;
+                env.CPU_ID = coreID;
                 const worker = node_cluster_1.default.fork(env);
                 // @ts-ignore
                 worker.busy = false;
@@ -118,8 +139,9 @@ class Pool {
                     worker.busy = false;
                 });
                 this.workers.push(worker);
-                (0, child_process_1.exec)(`taskset -pc ${cpuID} ${worker.process.pid}`);
-                if (this.workers.length === this.numCPUs) {
+                // @ts-ignore
+                this.pinProcess(coreID, worker.process.pid);
+                if (this.workers.length === this.poolSize) {
                     break;
                 }
             }
@@ -147,8 +169,19 @@ class Pool {
             });
         }
         else {
-            throw new Error('Unknown cluster state');
+            this.fatalError('Unknown cluster state');
         }
+        return true;
+    }
+    /**
+     * Pin process to CPU core via taskset
+     *
+     * @param {number} coreID
+     * @param {number} processID
+     * @private
+     */
+    pinProcess(coreID, processID) {
+        (0, node_child_process_1.exec)(`taskset -pc ${coreID} ${processID}`);
         return true;
     }
     /**
@@ -159,8 +192,7 @@ class Pool {
      */
     async runTask(f, ...args) {
         if (node_cluster_1.default.isWorker) {
-            throw new Error('Task cannot be started in worker');
-            process.exit(1);
+            this.fatalError('Task cannot be started in worker');
         }
         args = args.map((a) => {
             if (typeof a === 'function' || a?.constructor?.toString().substring(0, 5) === 'class') {
@@ -177,15 +209,15 @@ class Pool {
             }
         }
         if (cpuID === -1) {
-            throw new Error('Free CPU not found');
-            process.exit(1);
+            this.fatalError('Free CPU not found');
         }
         const i = this.currentTaskID;
         if (this.collectStatistics) {
-            if (!this.statistics[cpuID]) {
-                this.statistics[cpuID] = [];
+            const scpuID = this.pinPrimary && this.poolSize !== cores ? cpuID + 1 : cpuID;
+            if (!this.statistics[scpuID]) {
+                this.statistics[scpuID] = [];
             }
-            this.statistics[cpuID].push(i);
+            this.statistics[scpuID].push(i);
         }
         // @ts-ignore
         this.workers[cpuID].busy = true;
@@ -214,6 +246,27 @@ class Pool {
     setCtx(k, v) {
         // @ts-ignore
         this.ctx[k] = v;
+        return this;
+    }
+    /**
+     * Change pool size
+     *
+     * @param {number} size Number of processor cores to use in the pool
+     */
+    setPoolSize(size) {
+        if (node_cluster_1.default.isWorker) {
+            this.fatalError('Pool size cannot be changed in worker');
+        }
+        else if (size <= 0) {
+            this.fatalError('Pool size cannot be lower than 1');
+        }
+        else if (size > cores) {
+            this.fatalError(`Pool size cannot be greater than ${cores}`);
+        }
+        else if (this.currentTaskID > 0) {
+            this.fatalError('Pool size cannot be changed after first executed task');
+        }
+        this.poolSize = size;
         return this;
     }
     /**

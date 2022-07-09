@@ -26,10 +26,16 @@ export class Pool {
     private currentTaskID: number = 0
 
     /**
+     * Pin primary process to core #0
+     */
+    private readonly pinPrimary: boolean = true
+
+    /**
+     * Pool size (number of workers)
      *
      * @private
      */
-    private readonly numCPUs: number = 1
+    private poolSize: number = 1
 
     /**
      * Statistics in list format, where the key is the processor core number and the value is a list of completed tasks
@@ -53,18 +59,18 @@ export class Pool {
     /**
      * Pool constructor
      *
-     * @param {number} numCPU Number of processor cores to use in the pool
+     * @param {boolean} pinPrimary Pin primary process to core #0
      */
-    constructor(numCPU = cores) {
-        this.numCPUs = numCPU
-        this.init()
+    constructor(pinPrimary: boolean = true) {
+        this.pinPrimary = pinPrimary
+        this.poolSize = pinPrimary && cores > 2 ? cores - 1 : cores
     }
 
     /**
      * Checks that all current tasks are completed
      */
     allDone(): boolean {
-        return this.freeCPUs() === this.numCPUs
+        return this.freeCPUs() === this.poolSize
     }
 
     /**
@@ -73,6 +79,17 @@ export class Pool {
     exit() {
         this.stopWorkers()
         process.exit(0)
+    }
+
+    /**
+     * Throw new error and stop all processes without properly stopping workers
+     *
+     * @param {string} msg Error description
+     * @private
+     */
+    private fatalError(msg: string) {
+        throw new Error(msg)
+        process.exit(1)
     }
 
     /**
@@ -104,8 +121,14 @@ export class Pool {
      *
      * @private
      */
-    private init(): boolean {
+    init(): boolean {
         if (cluster.isPrimary) {
+            if (this.pinPrimary) {
+                this.pinProcess(0, process.pid)
+                if (this.collectStatistics) {
+                    this.statistics.push([-1])
+                }
+            }
             const env = {}
             Object.entries(process.env).forEach((item: [string, string|undefined] ) => {
                 const [k, v] = item
@@ -115,9 +138,9 @@ export class Pool {
                 }
             })
             while (true) {
-                const cpuID = this.workers.length
+                const coreID = this.pinPrimary ? this.workers.length + 1 : this.workers.length
                 // @ts-ignore
-                env.CPU_ID = cpuID
+                env.CPU_ID = coreID
                 const worker = cluster.fork(env)
                 // @ts-ignore
                 worker.busy = false
@@ -128,8 +151,9 @@ export class Pool {
                     worker.busy = false
                 })
                 this.workers.push(worker)
-                exec(`taskset -pc ${cpuID} ${worker.process.pid}`)
-                if (this.workers.length === this.numCPUs) {
+                // @ts-ignore
+                this.pinProcess(coreID, worker.process.pid)
+                if (this.workers.length === this.poolSize) {
                     break
                 }
             }
@@ -154,8 +178,21 @@ export class Pool {
                 })
             })
         } else {
-            throw new Error('Unknown cluster state')
+            this.fatalError('Unknown cluster state')
         }
+
+        return true
+    }
+
+    /**
+     * Pin process to CPU core via taskset
+     *
+     * @param {number} coreID
+     * @param {number} processID
+     * @private
+     */
+    private pinProcess(coreID: number, processID: number): boolean {
+        exec(`taskset -pc ${coreID} ${processID}`)
 
         return true
     }
@@ -168,8 +205,7 @@ export class Pool {
      */
     async runTask(f: Function, ...args: any[]): Promise<any> {
         if (cluster.isWorker) {
-            throw new Error('Task cannot be started in worker')
-            process.exit(1)
+            this.fatalError('Task cannot be started in worker')
         }
         args = args.map((a: any) => {
             if (typeof a === 'function' || a?.constructor?.toString().substring(0, 5) === 'class') {
@@ -187,15 +223,15 @@ export class Pool {
             }
         }
         if (cpuID === -1) {
-            throw new Error('Free CPU not found')
-            process.exit(1)
+            this.fatalError('Free CPU not found')
         }
         const i = this.currentTaskID
         if (this.collectStatistics) {
-            if (!this.statistics[cpuID]) {
-                this.statistics[cpuID] = []
+            const scpuID = this.pinPrimary && this.poolSize !== cores ? cpuID + 1 : cpuID
+            if (!this.statistics[scpuID]) {
+                this.statistics[scpuID] = []
             }
-            this.statistics[cpuID].push(i)
+            this.statistics[scpuID].push(i)
         }
         // @ts-ignore
         this.workers[cpuID].busy = true
@@ -226,6 +262,26 @@ export class Pool {
     setCtx(k: string, v: any): Pool {
         // @ts-ignore
         this.ctx[k] = v
+
+        return this
+    }
+
+    /**
+     * Change pool size
+     *
+     * @param {number} size Number of processor cores to use in the pool
+     */
+    setPoolSize(size: number): Pool {
+        if (cluster.isWorker) {
+            this.fatalError('Pool size cannot be changed in worker')
+        } else if (size <= 0 ) {
+            this.fatalError('Pool size cannot be lower than 1')
+        } else if (size > cores) {
+            this.fatalError(`Pool size cannot be greater than ${cores}`)
+        } else if (this.currentTaskID > 0) {
+            this.fatalError('Pool size cannot be changed after first executed task')
+        }
+        this.poolSize = size
 
         return this
     }

@@ -9,6 +9,8 @@ class Test extends Pool {
         this.setCtx('sleep', sleep)
 
         if (cluster.isPrimary) {
+            this.setPoolSize(3)
+            this.init()
             console.log('')
             console.log('tasks:')
             console.log('')
@@ -57,6 +59,8 @@ class Test extends Pool {
                     this.exit()
                 }
             }, 10)
+        } else {
+            this.init()
         }
     }
 

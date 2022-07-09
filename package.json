@@ -1,6 +1,6 @@
 {
   "name": "@qbq.systems/dumb-pool",
-  "version": "22.7.7-10.0.34",
+  "version": "22.7.9-9.28.19",
   "description": "Dumb process pool with CPU cores binding for 'heavy' tasks. A CPU core can only perform one task at a time. Linux only.",
   "homepage": "https://github.com/qbq-systems/dumb-pool-ts",
   "keywords": [

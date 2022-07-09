@@ -20,3 +20,4 @@ config.json
 pnpm-lock.yaml
 package-lock.json
 commit.sh
+.pnpm-debug.log

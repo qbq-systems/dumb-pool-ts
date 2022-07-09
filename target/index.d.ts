@@ -16,10 +16,15 @@ export declare class Pool {
      */
     private currentTaskID;
     /**
+     * Pin primary process to core #0
+     */
+    private readonly pinPrimary;
+    /**
+     * Pool size (number of workers)
      *
      * @private
      */
-    private readonly numCPUs;
+    private poolSize;
     /**
      * Statistics in list format, where the key is the processor core number and the value is a list of completed tasks
      */
@@ -39,9 +44,9 @@ export declare class Pool {
     /**
      * Pool constructor
      *
-     * @param {number} numCPU Number of processor cores to use in the pool
+     * @param {boolean} pinPrimary Pin primary process to core #0
      */
-    constructor(numCPU?: number);
+    constructor(pinPrimary?: boolean);
     /**
      * Checks that all current tasks are completed
      */
@@ -50,6 +55,13 @@ export declare class Pool {
      * Terminates the workers and the main process
      */
     exit(): void;
+    /**
+     * Throw new error and stop all processes without properly stopping workers
+     *
+     * @param {string} msg Error description
+     * @private
+     */
+    private fatalError;
     /**
      * Returns the number of free processor cores
      *
@@ -65,7 +77,15 @@ export declare class Pool {
      *
      * @private
      */
-    private init;
+    init(): boolean;
+    /**
+     * Pin process to CPU core via taskset
+     *
+     * @param {number} coreID
+     * @param {number} processID
+     * @private
+     */
+    private pinProcess;
     /**
      * Starts a task
      *
@@ -80,6 +100,12 @@ export declare class Pool {
      * @param {any} v Value
      */
     setCtx(k: string, v: any): Pool;
+    /**
+     * Change pool size
+     *
+     * @param {number} size Number of processor cores to use in the pool
+     */
+    setPoolSize(size: number): Pool;
     /**
      * Stops workers
      */
